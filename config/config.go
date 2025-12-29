@@ -1,18 +1,15 @@
-package main
+package config
 
 import (
 	"log"
-	"net/http"
 	"os"
 
 	"github.com/google/uuid"
-	"github.com/madza/tubley/internal/database"
-
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
+	"github.com/madza/tubley/internal/database"
 )
 
-type apiConfig struct {
+type ApiConfig struct {
 	db               database.Client
 	jwtSecret        string
 	platform         string
@@ -31,8 +28,11 @@ type thumbnail struct {
 
 var videoThumbnails = map[uuid.UUID]thumbnail{}
 
-func main() {
-	godotenv.Load(".env")
+func NewApiConfig() *ApiConfig {
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("unable to load .env file")
+	}
 
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
@@ -84,7 +84,7 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
-	cfg := apiConfig{
+	cfg := ApiConfig{
 		db:               db,
 		jwtSecret:        jwtSecret,
 		platform:         platform,
@@ -95,40 +95,5 @@ func main() {
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
 	}
-
-	err = cfg.ensureAssetsDir()
-	if err != nil {
-		log.Fatalf("Couldn't create assets directory: %v", err)
-	}
-
-	mux := http.NewServeMux()
-	appHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
-	mux.Handle("/app/", appHandler)
-
-	assetsHandler := http.StripPrefix("/assets", http.FileServer(http.Dir(assetsRoot)))
-	mux.Handle("/assets/", cacheMiddleware(assetsHandler))
-
-	mux.HandleFunc("POST /api/login", cfg.handlerLogin)
-	mux.HandleFunc("POST /api/refresh", cfg.handlerRefresh)
-	mux.HandleFunc("POST /api/revoke", cfg.handlerRevoke)
-
-	mux.HandleFunc("POST /api/users", cfg.handlerUsersCreate)
-
-	mux.HandleFunc("POST /api/videos", cfg.handlerVideoMetaCreate)
-	mux.HandleFunc("POST /api/thumbnail_upload/{videoID}", cfg.handlerUploadThumbnail)
-	mux.HandleFunc("POST /api/video_upload/{videoID}", cfg.handlerUploadVideo)
-	mux.HandleFunc("GET /api/videos", cfg.handlerVideosRetrieve)
-	mux.HandleFunc("GET /api/videos/{videoID}", cfg.handlerVideoGet)
-	mux.HandleFunc("GET /api/thumbnails/{videoID}", cfg.handlerThumbnailGet)
-	mux.HandleFunc("DELETE /api/videos/{videoID}", cfg.handlerVideoMetaDelete)
-
-	mux.HandleFunc("POST /admin/reset", cfg.handlerReset)
-
-	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
-	}
-
-	log.Printf("Serving on: http://localhost:%s/app/\n", port)
-	log.Fatal(srv.ListenAndServe())
+	return &cfg
 }

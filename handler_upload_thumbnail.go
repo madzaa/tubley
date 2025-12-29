@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
+	"github.com/madza/tubley/internal/auth"
 )
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -28,10 +30,44 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// TODO: implement the upload here
+	var maxMemory int64 = 10 << 20
+	err = r.ParseMultipartForm(maxMemory)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't parse form", err)
+		return
+	}
+	data, header, err := r.FormFile("thumbnail")
+	mediaType := header.Header.Get("Content-Type")
+	if mediaType == "" {
+		respondWithError(w, http.StatusInternalServerError, "Unable to  get content-type", err)
+		return
+	}
+	imgData, err := io.ReadAll(data)
+	metadata, err := cfg.db.GetVideo(videoID)
+	if metadata.UserID != userID {
+		respondWithError(w, http.StatusUnauthorized, "User not authorized to access the video", err)
+		return
+	}
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to get video", err)
+		return
+	}
+	thn := thumbnail{
+		data:      imgData,
+		mediaType: mediaType,
+	}
+	videoThumbnails[videoID] = thn
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	thnUrl := "http://localhost:8091/api/thumbnails/" + videoID.String()
+	metadata.ThumbnailURL = &thnUrl
+	metadata.UpdatedAt = time.Now()
+	err = cfg.db.UpdateVideo(metadata)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to update video", err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, metadata)
 }
