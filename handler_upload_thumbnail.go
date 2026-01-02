@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,10 +45,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	data, header, err := r.FormFile("thumbnail")
 	mediaType := header.Header.Get("Content-Type")
-	if mediaType == "" {
-		respondWithError(w, http.StatusInternalServerError, "Unable to  get content-type", err)
+	allowedTypes := []string{"image/jpeg", "image/png"}
+	found := slices.Contains(allowedTypes, mediaType)
+	if !found {
+		respondWithError(w, http.StatusInternalServerError, "Invalid Content-Type", err)
 		return
 	}
+	extension, ok := strings.CutPrefix(mediaType, "image/")
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Unable to get extension", err)
+		return
+	}
+
 	imgData, err := io.ReadAll(data)
 	metadata, err := cfg.db.GetVideo(videoID)
 	if metadata.UserID != userID {
@@ -55,14 +67,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Unable to get video", err)
 		return
 	}
-	thn := thumbnail{
-		data:      imgData,
-		mediaType: mediaType,
-	}
-	videoThumbnails[videoID] = thn
 
-	thnUrl := "http://localhost:8091/api/thumbnails/" + videoID.String()
+	thnPath := filepath.Join(cfg.assetsRoot, videoIDString) + "." + extension
+	thnUrl := fmt.Sprintf("http://localhost:8091/%s/%s.%s", cfg.assetsRoot, videoID.String(), extension)
+
+	err = os.WriteFile(thnPath, imgData, 0666)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable save file", err)
+		return
+	}
+
 	metadata.ThumbnailURL = &thnUrl
+
 	metadata.UpdatedAt = time.Now()
 	err = cfg.db.UpdateVideo(metadata)
 	if err != nil {
