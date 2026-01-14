@@ -1,32 +1,36 @@
 package config
 
 import (
+	"context"
 	"log"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/madza/tubley/internal/database"
 )
 
 type ApiConfig struct {
-	db               database.Client
-	jwtSecret        string
-	platform         string
-	filepathRoot     string
-	assetsRoot       string
-	s3Bucket         string
-	s3Region         string
-	s3CfDistribution string
-	port             string
+	Db               database.Client
+	JwtSecret        string
+	Platform         string
+	FilepathRoot     string
+	AssetsRoot       string
+	S3Bucket         string
+	S3Region         string
+	S3CfDistribution string
+	Port             string
+	S3Client         *s3.Client
 }
 
-type thumbnail struct {
-	data      []byte
-	mediaType string
+type Thumbnail struct {
+	Data      []byte
+	MediaType string
 }
 
-var videoThumbnails = map[uuid.UUID]thumbnail{}
+var VideoThumbnails = map[uuid.UUID]Thumbnail{}
 
 func NewApiConfig() *ApiConfig {
 	err := godotenv.Load(".env")
@@ -84,16 +88,24 @@ func NewApiConfig() *ApiConfig {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	s3Config, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(s3Region))
+	if err != nil {
+		log.Fatal("Unable to get default AWS config")
+	}
+
+	s3Client := s3.NewFromConfig(s3Config)
+
 	cfg := ApiConfig{
-		db:               db,
-		jwtSecret:        jwtSecret,
-		platform:         platform,
-		filepathRoot:     filepathRoot,
-		assetsRoot:       assetsRoot,
-		s3Bucket:         s3Bucket,
-		s3Region:         s3Region,
-		s3CfDistribution: s3CfDistribution,
-		port:             port,
+		Db:               db,
+		JwtSecret:        jwtSecret,
+		Platform:         platform,
+		FilepathRoot:     filepathRoot,
+		AssetsRoot:       assetsRoot,
+		S3Bucket:         s3Bucket,
+		S3Region:         s3Region,
+		S3CfDistribution: s3CfDistribution,
+		Port:             port,
+		S3Client:         s3Client,
 	}
 	return &cfg
 }
